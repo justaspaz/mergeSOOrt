@@ -1,15 +1,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <mpi.h>
-
-#define ARRAY_SIZE 10000000
+#include <math.h>
 
 void merge(int arr[], int l, int m, int r) {
     int i, j, k;
     int n1 = m - l + 1;
     int n2 = r - m;
 
-    int L[n1], R[n2];
+    int *L = (int *)malloc(n1 * sizeof(int));
+    int *R = (int *)malloc(n2 * sizeof(int));
 
     for (i = 0; i < n1; i++)
         L[i] = arr[l + i];
@@ -41,6 +41,9 @@ void merge(int arr[], int l, int m, int r) {
         j++;
         k++;
     }
+
+    free(L);
+    free(R);
 }
 
 void mergeSort(int arr[], int l, int r) {
@@ -65,67 +68,76 @@ int main(int argc, char *argv[]) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    double execution_times[size]; // Array to store execution times
+    double execution_times[9]; // Array to store execution times for powers of 2
 
-    if (rank == 0) {
-        data = (int *)malloc(sizeof(int) * ARRAY_SIZE);
-        printf("Original Array:\n");
-        for (int i = 0; i < ARRAY_SIZE; i++) {
-            data[i] = rand() % 100;
-            printf("%d ", data[i]);
-        }
-        printf("\n");
-    }
+    int arraySizes[] = {(1 << 24), (1 << 26), (1 << 28)}; // 2^24, 2^26, 2^28
 
-    double start_time, end_time;
-    double local_time = 0.0;
-    double max_time = 0.0;
-
-    for (int num_procs = 1; num_procs <= size; num_procs++) {
-        if (rank == 0) {
-            printf("\nNumber of Processors: %d\n", num_procs);
-        }
-
-        MPI_Barrier(MPI_COMM_WORLD);
-        start_time = MPI_Wtime();
-
-        MPI_Comm new_comm;
-        MPI_Comm_split(MPI_COMM_WORLD, rank < num_procs, rank, &new_comm);
-
-        if (rank < num_procs) {
-            chunkSize = ARRAY_SIZE / num_procs;
-            localData = (int *)malloc(sizeof(int) * chunkSize);
-
-            MPI_Scatter(data, chunkSize, MPI_INT, localData, chunkSize, MPI_INT, 0, new_comm);
-
-            mergeSort(localData, 0, chunkSize - 1);
-
-            MPI_Gather(localData, chunkSize, MPI_INT, data, chunkSize, MPI_INT, 0, new_comm);
-
-            free(localData);
-        }
-
-        MPI_Barrier(MPI_COMM_WORLD);
-        end_time = MPI_Wtime();
-        local_time = end_time - start_time;
-
-        MPI_Reduce(&local_time, &max_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    for (int arrayIdx = 0; arrayIdx < 3; arrayIdx++) {
+        int currentArraySize = arraySizes[arrayIdx];
 
         if (rank == 0) {
-            execution_times[num_procs - 1] = max_time; // Store execution time
-            printf("Time taken to sort: %lf seconds\n", max_time);
+            data = (int *)malloc(sizeof(int) * currentArraySize);
+            for (int i = 0; i < currentArraySize; i++) {
+                data[i] = rand() % 100;
+            }
+            printf("\nArray Size: 2^%d\n", (int)(log2(currentArraySize)));
         }
 
-        MPI_Comm_free(&new_comm);
-    }
+        double start_time, end_time;
+        double local_time = 0.0;
+        double max_time = 0.0;
 
-    if (rank == 0) {
-        printf("\nExecution Times:\n");
-        for (int i = 0; i < size; i++) {
-            printf("Processors: %d, Time: %lf seconds\n", i + 1, execution_times[i]);
+        for (int p = 0; p <= 8; p++) { // 1, 2, 4, ..., 256 processors
+            int num_procs = (1 << p);
+            if (num_procs > size) break;
+
+            if (rank == 0) {
+                printf("\nNumber of Processors: %d\n", num_procs);
+            }
+
+            MPI_Barrier(MPI_COMM_WORLD);
+            start_time = MPI_Wtime();
+
+            MPI_Comm new_comm;
+            MPI_Comm_split(MPI_COMM_WORLD, rank < num_procs, rank, &new_comm);
+
+            if (rank < num_procs) {
+                chunkSize = currentArraySize / num_procs;
+                localData = (int *)malloc(sizeof(int) * chunkSize);
+
+                MPI_Scatter(data, chunkSize, MPI_INT, localData, chunkSize, MPI_INT, 0, new_comm);
+
+                mergeSort(localData, 0, chunkSize - 1);
+
+                MPI_Gather(localData, chunkSize, MPI_INT, data, chunkSize, MPI_INT, 0, new_comm);
+
+                free(localData);
+            }
+
+            MPI_Barrier(MPI_COMM_WORLD);
+            end_time = MPI_Wtime();
+            local_time = end_time - start_time;
+
+            MPI_Reduce(&local_time, &max_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
+            if (rank == 0) {
+                execution_times[p] = max_time; // Store execution time
+                printf("Time taken to sort: %lf seconds\n", max_time);
+            }
+
+            MPI_Comm_free(&new_comm);
         }
 
-        free(data);
+        if (rank == 0) {
+            printf("\nExecution Times for Array Size 2^%d:\n", (int)(log2(currentArraySize)));
+            for (int p = 0; p <= 8; p++) {
+                int num_procs = (1 << p);
+                if (num_procs > size) break;
+                printf("Processors: %d, Time: %lf seconds\n", num_procs, execution_times[p]);
+            }
+
+            free(data);
+        }
     }
 
     MPI_Finalize();
