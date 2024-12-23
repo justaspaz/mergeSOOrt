@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <mpi.h>
 
-#define ARRAY_SIZE 100
+#define ARRAY_SIZE 1000000
 
 void merge(int arr[], int l, int m, int r) {
     int i, j, k;
