@@ -91,10 +91,6 @@ int main(int argc, char *argv[]) {
             int num_procs = (1 << p);
             if (num_procs > size) break;
 
-            if (rank == 0) {
-                printf("\nNumber of Processors: %d\n", num_procs);
-            }
-
             MPI_Barrier(MPI_COMM_WORLD);
             start_time = MPI_Wtime();
 
