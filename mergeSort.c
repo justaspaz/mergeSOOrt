@@ -1,144 +1,134 @@
-/* Parallel merge sort */
 #include <stdio.h>
+#include <stdlib.h>
 #include <mpi.h>
-#include <time.h>
 
-#define N 1000000
+#define ARRAY_SIZE 100
 
-int * merge(int *First, int Fsize, int *Second, int Ssize);
-void sort(int *A, int begin, int end);
-void printElements(int rank, int *v, int n);
+void merge(int arr[], int l, int m, int r) {
+    int i, j, k;
+    int n1 = m - l + 1;
+    int n2 = r - m;
 
-int * merge(int *First, int Fsize, int *Second, int Ssize) {
-	int fi = 0, si = 0, mi = 0, i;
-	int *merged;
-	int Msize = Fsize+Ssize;
+    int L[n1], R[n2];
 
-	merged = (int *)malloc(Msize*sizeof(int));
-	while ((fi < Fsize) && (si < Ssize)) {
-		if (First[fi] <= Second[si]) {
-			merged[mi] = First[fi];
-			mi++; fi++;
-		} else {
-			merged[mi] = Second[si];
-			mi++; si++;
-		}
-	}
+    for (i = 0; i < n1; i++)
+        L[i] = arr[l + i];
+    for (j = 0; j < n2; j++)
+        R[j] = arr[m + 1 + j];
 
-	if (fi >= Fsize)
-		for (i = mi; i < Msize; i++, si++)
-			merged[i] = Second[si];
-	else if (si >= Ssize)
-		for (i = mi; i < Msize; i++, fi++)
-			merged[i] = First[fi];
+    i = 0;
+    j = 0;
+    k = l;
+    while (i < n1 && j < n2) {
+        if (L[i] <= R[j]) {
+            arr[k] = L[i];
+            i++;
+        } else {
+            arr[k] = R[j];
+            j++;
+        }
+        k++;
+    }
 
-	for (i = 0; i < Fsize; i++)
-		First[i] = merged[i];
-	for (i = 0; i < Ssize; i++)
-		Second[i] = merged[Fsize+i];
+    while (i < n1) {
+        arr[k] = L[i];
+        i++;
+        k++;
+    }
 
-	return merged;
+    while (j < n2) {
+        arr[k] = R[j];
+        j++;
+        k++;
+    }
 }
 
-void sort(int *Arr, int start, int end)
-{
-	int *sortedArr;
-	int mid = (start+end)/2;
-	int leftCount = mid - start + 1;
-	int rightCount = end - mid;
-	if (end == start) {
-		return;
-	} else {
-		sort(Arr, start, mid);
-		sort(Arr, mid+1, end);
-		sortedArr = merge(Arr + start, leftCount, Arr + mid + 1, rightCount);
-	}
+void mergeSort(int arr[], int l, int r) {
+    if (l < r) {
+        int m = l + (r - l) / 2;
+
+        mergeSort(arr, l, m);
+        mergeSort(arr, m + 1, r);
+
+        merge(arr, l, m, r);
+    }
 }
 
-void printElements(int rank, int *t, int n)
-{
-	int i;
-	printf("%d: ",rank);
-	for(i=0;i<n;i++)
-        printf("%d ",t[i]);
-    printf("\n\n");
-}
+int main(int argc, char *argv[]) {
+    int rank, size;
+    int *data = NULL;
+    int chunkSize;
+    int *localData = NULL;
+    int localSize;
 
-main(int argc, char **argv)
-{
-	int * data;
-	int * local_data;
-	int * otherArr;
-	int q,n=N;
-	int my_rank,comm_sz;
-	int local_n = 0;
-	int i;
-	int step;
-	double start,stop;
-	MPI_Status status;
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-	MPI_Init(&argc,&argv);
-	MPI_Comm_rank(MPI_COMM_WORLD,&my_rank);
-	MPI_Comm_size(MPI_COMM_WORLD,&comm_sz);
+    double execution_times[size]; // Array to store execution times
 
-	start = clock();
-	if(my_rank == 0)
-	{
-		int r;
-		local_n = n/comm_sz;
-		r = n%comm_sz;
-		int size = n+local_n-r;
-		data = (int *)malloc((size)*sizeof(int));
-		for(i=0;i<n;i++)
-			data[i] = random() % 1000;
-		if(r!=0)
-		{
-			for(i=n;i<size;i++)
-				data[i]=0;
-			local_n=local_n+1;
-		}
-		MPI_Bcast(&local_n,1,MPI_INT,0,MPI_COMM_WORLD);
-		local_data = (int *)malloc(local_n*sizeof(int));
-		MPI_Scatter(data,local_n,MPI_INT,local_data,local_n,MPI_INT,0,MPI_COMM_WORLD);
-		sort(local_data, 0, local_n-1);
-	}
-	else
-	{
-		MPI_Bcast(&local_n,1,MPI_INT,0,MPI_COMM_WORLD);
-		local_data = (int *)malloc(local_n*sizeof(int));
-		MPI_Scatter(data,local_n,MPI_INT,local_data,local_n,MPI_INT,0,MPI_COMM_WORLD);
-		sort(local_data, 0, local_n-1);
+    if (rank == 0) {
+        data = (int *)malloc(sizeof(int) * ARRAY_SIZE);
+        printf("Original Array:\n");
+        for (int i = 0; i < ARRAY_SIZE; i++) {
+            data[i] = rand() % 100;
+            printf("%d ", data[i]);
+        }
+        printf("\n");
+    }
 
-	}
-	step = 1;
-	while(step < comm_sz)
-	{
-		if(my_rank % (2*step) == 0)
-		{
-			if(my_rank+step < comm_sz)
-			{
-				MPI_Recv(&q, 1, MPI_INT, my_rank+step, 0, MPI_COMM_WORLD, &status);
-				otherArr = (int *)malloc(q*sizeof(int));
-				MPI_Recv(otherArr, q, MPI_INT, my_rank+step, 0, MPI_COMM_WORLD, &status);
-				local_data = merge(local_data, local_n, otherArr, q);
-				local_n = local_n + q;
-			}
-		}
-		else
-		{
-			int dest = my_rank-step;
-			MPI_Send(&local_n, 1, MPI_INT, dest, 0, MPI_COMM_WORLD);
-			MPI_Send(local_data, local_n, MPI_INT, dest, 0, MPI_COMM_WORLD);
-			break;
-		}
-		step = step * 2;
-	}
-	stop = clock();
+    double start_time, end_time;
+    double local_time = 0.0;
+    double max_time = 0.0;
 
-	if(my_rank == 0)
-	{
-        printf("\nArray with %d; %d processors, took %f second\n\n",local_n, comm_sz,(stop-start)/CLOCKS_PER_SEC);
-	}
+    for (int num_procs = 1; num_procs <= size; num_procs++) {
+        if (rank == 0) {
+            printf("\nNumber of Processors: %d\n", num_procs);
+        }
+
+        MPI_Barrier(MPI_COMM_WORLD);
+        start_time = MPI_Wtime();
+
+        MPI_Comm new_comm;
+        MPI_Comm_split(MPI_COMM_WORLD, rank < num_procs, rank, &new_comm);
+
+        if (rank < num_procs) {
+            chunkSize = ARRAY_SIZE / num_procs;
+            localData = (int *)malloc(sizeof(int) * chunkSize);
+
+            MPI_Scatter(data, chunkSize, MPI_INT, localData, chunkSize, MPI_INT, 0, new_comm);
+
+            mergeSort(localData, 0, chunkSize - 1);
+
+            MPI_Gather(localData, chunkSize, MPI_INT, data, chunkSize, MPI_INT, 0, new_comm);
+
+            free(localData);
+        }
+
+        MPI_Barrier(MPI_COMM_WORLD);
+        end_time = MPI_Wtime();
+        local_time = end_time - start_time;
+
+        MPI_Reduce(&local_time, &max_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
+        if (rank == 0) {
+            execution_times[num_procs - 1] = max_time; // Store execution time
+            printf("Time taken to sort: %lf seconds\n", max_time);
+        }
+
+        MPI_Comm_free(&new_comm);
+    }
+
+    if (rank == 0) {
+        printf("\nExecution Times:\n");
+        for (int i = 0; i < size; i++) {
+            printf("Processors: %d, Time: %lf seconds\n", i + 1, execution_times[i]);
+        }
+
+        free(data);
+    }
 
     MPI_Finalize();
+
+    return 0;
 }
