@@ -80,7 +80,6 @@ int main(int argc, char *argv[]) {
             for (int i = 0; i < currentArraySize; i++) {
                 data[i] = rand() % 100;
             }
-            printf("\nArray Size: 2^%d\n", (int)(log2(currentArraySize)));
         }
 
         double start_time, end_time;
@@ -125,7 +124,6 @@ int main(int argc, char *argv[]) {
         }
 
         if (rank == 0) {
-            printf("\nExecution Times for Array Size 2^%d:\n", (int)(log2(currentArraySize)));
             for (int p = 0; p <= 8; p++) {
                 int num_procs = (1 << p);
                 if (num_procs > size) break;
